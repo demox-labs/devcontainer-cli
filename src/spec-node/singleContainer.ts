@@ -390,17 +390,25 @@ export async function spawnDevContainer(params: DockerResolverParameters, config
 	);
 
 	const customEntrypoints = mergedConfig.entrypoints || [];
-	const entrypoint = ['--entrypoint', '/bin/sh'];
-	const cmd = ['-c', `echo Container started
+	const overrideCommand = mergedConfig.overrideCommand;
+
+	// When overrideCommand is false, don't override the entrypoint at all.
+	// This allows init systems (systemd, runit, etc.) to run as PID 1.
+	let entrypoint: string[];
+	let cmd: string[];
+
+	if (overrideCommand === false) {
+		// Don't override - let Docker use the image's original entrypoint and cmd
+		entrypoint = [];
+		cmd = [];
+	} else {
+		// Default behavior: use /bin/sh wrapper for signal handling and keep-alive
+		entrypoint = ['--entrypoint', '/bin/sh'];
+		cmd = ['-c', `echo Container started
 trap "exit 0" 15
 ${customEntrypoints.join('\n')}
 exec "$@"
 while sleep 1 & wait $!; do :; done`, '-']; // `wait $!` allows for the `trap` to run (synchronous `sleep` would not).
-	const overrideCommand = mergedConfig.overrideCommand;
-	if (overrideCommand === false) {
-		const details = await imageDetails();
-		cmd.push(...details.Config.Entrypoint || []);
-		cmd.push(...details.Config.Cmd || []);
 	}
 
 	const args = [
